@@ -62,7 +62,7 @@ def create_mail_message(session, model_name, record_id, vals):
             store = mag_sale.storeview_id.store_id
             session.create('magento.sale.comment', {
                 'openerp_id': record_id,
-                'subject': _('Sent to Magento'),
+                #'subject': _('Sent to Magento'),
                 'is_visible_on_front': True,
                 'is_customer_notified': store.send_sale_comment_mail,
                 'magento_sale_order_id': mag_sale.id,

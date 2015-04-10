@@ -334,7 +334,11 @@ class MagentoExporter(MagentoBaseExporter):
         """ Can do several actions after exporting a record on magento """
         pass
 
+    #TODO FIXME we should adapt magentopartner_export
     def _validate_data(self, data):
+        return
+
+    def _validate_create_data(self, data):
         """ Check if the values to import are correct
 
         Kept for retro-compatibility. To remove in 8.0
@@ -368,7 +372,17 @@ class MagentoExporter(MagentoBaseExporter):
 
         Raise `InvalidDataError`
         """
-        return
+        return self._validate_data(data)
+
+    def _validate_update_data(self, data):
+        """ Check if the values to import are correct
+
+        Pro-actively check before the ``Model.create`` or
+        ``Model.update`` if some fields are missing
+
+        Raise `InvalidDataError`
+        """
+        return self._validate_data(data)
 
     def _create_data(self, map_record, fields=None, **kwargs):
         """ Get the data to pass to :py:meth:`_create` """
@@ -453,6 +467,8 @@ class MagentoTranslationExporter(MagentoExporter):
         storeviews = session.browse('magento.storeview', storeview_ids)
         lang_storeviews = [sv for sv in storeviews
                            if sv.lang_id and sv.lang_id != default_lang]
+        #TODO FIXME
+        fields = []
         if lang_storeviews:
             translatable_fields = self._get_translatable_field(fields)   
             if translatable_fields:
@@ -477,6 +493,9 @@ class MagentoTranslationExporter(MagentoExporter):
 @related_action(action=unwrap_binding)
 def export_record(session, model_name, binding_id, fields=None):
     """ Export a record on Magento """
+    if model_name in ('magento.product.category', 'magento.product.product'):
+        if not session.search(model_name, [['id', '=', binding_id]]):
+            return "The binding do not exist anymore, skip it"
     record = session.browse(model_name, binding_id)
     env = get_environment(session, model_name, record.backend_id.id)
     exporter = env.get_connector_unit(MagentoExporter)

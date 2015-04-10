@@ -56,8 +56,18 @@ from .unit.import_synchronizer import (DelayedBatchImport,
 from .connector import get_environment
 from .backend import magento, magento2000, magento2200
 from .related_action import unwrap_binding
+from .exception import SkuAlreadyExistInBackend
 
 _logger = logging.getLogger(__name__)
+
+
+from openerp.addons.connector.exception import RetryableJobError
+
+class ProductNotExportedYetRetry(RetryableJobError):
+    """ The product have been not exported yet, retry later """
+
+class ProductFailDuringReindex(RetryableJobError):
+    """ The product have fail during the reindexing, retry later """
 
 
 def chunks(items, length):
@@ -267,6 +277,13 @@ class ProductProductAdapter(GenericAdapter):
             # when the product does not exist
             if err.faultCode == 101:
                 raise IDMissingInBackend
+            #TODO Move me in a specifique module as error
+            #message depend of the lang
+            elif err.faultCode == 1 \
+                    and err.faultString == u'La valeur de l\'attribut "SKU" doit \xeatre unique':
+                raise SkuAlreadyExistInBackend
+            elif u'Duplicate entry' in err.faultString:
+                raise ProductFailDuringReindex
             else:
                 raise
 
@@ -310,7 +327,7 @@ class ProductProductAdapter(GenericAdapter):
                 for attr in res.get('custom_attributes', []):
                     res[attr['attribute_code']] = attr['value']
             return res
-        return self._call('ol_catalog_product.info',
+        return self._call('%s.info' % self._magento_model,
                           [int(id), storeview_id, attributes, 'id'])
 
     def read_with_sku(self, sku, storeview_id=False, attributes=False):
@@ -343,7 +360,7 @@ class ProductProductAdapter(GenericAdapter):
         if v(self.magento.version) >= v('2.0'):
             raise NotImplementedError  # TODO
         # product_stock.update is too slow
-        return self._call('oerp_cataloginventory_stock_item.update',
+        return self._call('product_stock.update',
                           [int(id), data])
 
 
@@ -791,25 +808,26 @@ class ProductInventoryExport(ExportSynchronizer):
                        }
 
     def _get_data(self, product, fields):
+        if not fields:
+            fields=[]
         result = {}
-        if 'magento_qty' in fields:
-            result.update({
-                'qty': product.magento_qty,
-                # put the stock availability to "out of stock"
-                'is_in_stock': int(product.magento_qty > 0)
-            })
-        if 'manage_stock' in fields:
-            manage = product.manage_stock
-            result.update({
-                'manage_stock': int(manage == 'yes'),
-                'use_config_manage_stock': int(manage == 'use_default'),
-            })
-        if 'backorders' in fields:
-            backorders = product.backorders
-            result.update({
-                'backorders': self._map_backorders[backorders],
-                'use_config_backorders': int(backorders == 'use_default'),
-            })
+        result.update({
+            'qty': product.magento_qty,
+            # put the stock availability to "out of stock"
+            'is_in_stock': int(product.magento_qty > 0)
+        })
+        manage = product.manage_stock
+        result.update({
+            'manage_stock': int(manage == 'yes'),
+            'use_config_manage_stock': int(manage == 'use_default'),
+        })
+        backorders = product.backorders
+        result.update({
+            'backorders': self._map_backorders[backorders],
+            'use_config_backorders': int(backorders == 'use_default'),
+        })
+        if result['backorders']:
+            result['is_in_stock'] = True
         return result
 
     def run(self, binding_id, fields):
@@ -817,6 +835,8 @@ class ProductInventoryExport(ExportSynchronizer):
         product = self.session.browse(self.model._name, binding_id)
         binder = self.get_binder_for_model()
         magento_id = binder.to_backend(product.id)
+        if not magento_id:
+            raise ProductNotExportedYetRetry
         data = self._get_data(product, fields)
         self.backend_adapter.update_inventory(magento_id, data)
 

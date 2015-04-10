@@ -19,6 +19,8 @@
 #
 ##############################################################################
 
+from functools import wraps
+
 from openerp.addons.connector.event import (on_record_write,
                                             on_record_create,
                                             on_record_unlink
@@ -31,10 +33,29 @@ from .connector import get_environment
 _MODEL_NAMES = ()
 _BIND_MODEL_NAMES = ()
 
+def _job_to_key(job):
+    args = []
+    for val in job.args:
+        if isinstance(val, (int, long)):
+            args.append(repr(long(val)))
+        else:
+            args.append(repr(val))
+    return '%s-%s-%s-%s' % (
+        job.func_name,
+        '|'.join(args),
+        job.company_id,
+        job.user_id,
+        )
+
+def _merge_job(existing_job, job):
+    for field in job.kwargs['fields']:
+        if not field in existing_job.kwargs['fields']:
+            existing_job.kwargs['fields'].append(field)
+    return existing_job
 
 @on_record_create(model_names=_BIND_MODEL_NAMES)
 @on_record_write(model_names=_BIND_MODEL_NAMES)
-def delay_export(session, model_name, record_id, vals):
+def delay_export(session, model_name, record_id, vals, priority=100):
     """ Delay a job which export a binding record.
 
     (A binding record being a ``magento.res.partner``,
@@ -43,11 +64,16 @@ def delay_export(session, model_name, record_id, vals):
     if session.context.get('connector_no_export'):
         return
     fields = vals.keys()
-    export_record.delay(session, model_name, record_id, fields=fields)
+    if fields:
+        export_record.delay(
+            session, model_name, record_id, fields=fields,
+            _job_to_key=_job_to_key, _merge_job=_merge_job,
+            priority=priority)
 
 
 @on_record_write(model_names=_MODEL_NAMES)
-def delay_export_all_bindings(session, model_name, record_id, vals):
+def delay_export_all_bindings(session, model_name, record_id,
+                              vals, priority=100):
     """ Delay a job which export all the bindings of a record.
 
     In this case, it is called on records of normal models and will delay
@@ -59,13 +85,16 @@ def delay_export_all_bindings(session, model_name, record_id, vals):
     record = model.browse(session.cr, session.uid,
                           record_id, context=session.context)
     fields = vals.keys()
-    for binding in record.magento_bind_ids:
-        export_record.delay(session, binding._model._name, binding.id,
-                            fields=fields)
+    if fields:
+        for binding in record.magento_bind_ids:
+            export_record.delay(
+                session, binding._model._name, binding.id, fields=fields,
+                _job_to_key=_job_to_key, _merge_job=_merge_job,
+                priority=priority)
 
 
 @on_record_unlink(model_names=_MODEL_NAMES)
-def delay_unlink_all_bindings(session, model_name, record_id):
+def delay_unlink_all_bindings(session, model_name, record_id, priority=50):
     """ Delay jobs which delete all the bindings of a record.
 
     In this case, it is called on records of normal models and will delay
@@ -77,11 +106,12 @@ def delay_unlink_all_bindings(session, model_name, record_id):
     record = model.browse(session.cr, session.uid,
                           record_id, context=session.context)
     for binding in record.magento_bind_ids:
-        delay_unlink(session, binding._model._name, binding.id)
+        delay_unlink(session, binding._model._name,
+                     binding.id, priority=priority)
 
 
 @on_record_unlink(model_names=_BIND_MODEL_NAMES)
-def delay_unlink(session, model_name, record_id):
+def delay_unlink(session, model_name, record_id, priority=50):
     """ Delay a job which delete a record on Magento.
 
     Called on binding records."""
@@ -93,4 +123,5 @@ def delay_unlink(session, model_name, record_id):
     magento_id = binder.to_backend(record_id)
     if magento_id:
         export_delete_record.delay(session, model_name,
-                                   record.backend_id.id, magento_id)
+                                   record.backend_id.id, magento_id,
+                                   priority=priority)

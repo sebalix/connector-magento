@@ -650,10 +650,10 @@ class AddressAdapter(GenericAdapter):
 class AddressImport(MagentoImportSynchronizer):
     _model_name = ['magento.address']
 
-    def run(self, magento_id, address_infos):
+    def run(self, magento_id, address_infos, force=False):
         """ Run the synchronization """
         self.address_infos = address_infos
-        return super(AddressImport, self).run(magento_id)
+        return super(AddressImport, self).run(magento_id, force=force)
 
     def _get_magento_data(self):
         """ Return the raw Magento data for ``self.magento_id`` """
