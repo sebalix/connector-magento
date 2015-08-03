@@ -56,15 +56,18 @@ class mail_message(orm.Model):
 def create_mail_message(session, model_name, record_id, vals):
     if session.context.get('connector_no_export'):
         return
-    if vals.get('model') == 'sale.order' and vals.get('subtype_id'):
+    if vals.get('model') == 'sale.order' and (
+            vals.get('subtype_id') or vals['type'] == 'email'
+            ):
         order = session.browse('sale.order', vals['res_id'])
         for mag_sale in order.magento_bind_ids:
             store = mag_sale.storeview_id.store_id
+            notify = vals['type'] != 'email' and store.send_sale_comment_mail
             session.create('magento.sale.comment', {
                 'openerp_id': record_id,
                 'subject': _('Sent to Magento'),
                 'is_visible_on_front': True,
-                'is_customer_notified': store.send_sale_comment_mail,
+                'is_customer_notified': notify,
                 'magento_sale_order_id': mag_sale.id,
             })
 

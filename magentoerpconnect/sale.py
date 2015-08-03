@@ -898,7 +898,8 @@ class SaleOrderImport(MagentoImportSynchronizer):
             **kwargs)
 
     def _import_dependencies(self):
-        self._import_addresses()
+        with self.session.change_context({'connector_no_export': True}):
+            self._import_addresses()
 
 
 @magento1700
