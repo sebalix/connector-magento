@@ -493,7 +493,10 @@ class MagentoTranslationExporter(MagentoExporter):
 @related_action(action=unwrap_binding)
 def export_record(session, model_name, binding_id, fields=None):
     """ Export a record on Magento """
-    if model_name in ('magento.product.category', 'magento.product.product'):
+    if model_name in (
+            'magento.product.category',
+            'magento.product.product',
+            'magento.product.image'):
         if not session.search(model_name, [['id', '=', binding_id]]):
             return "The binding do not exist anymore, skip it"
     record = session.browse(model_name, binding_id)
