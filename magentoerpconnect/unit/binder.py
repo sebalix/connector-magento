@@ -92,12 +92,11 @@ class MagentoModelBinder(MagentoBinder):
         :return: backend identifier of the record
         """
         if wrap:
-            with self.session.change_context({'active_test': False}):
-                erp_id = self.session.search(
-                    self.model._name,
-                    [('openerp_id', '=', record_id),
-                     ('backend_id', '=', self.backend_record.id)
-                     ])
+            erp_id = self.session.search(
+                self.model._name,
+                [('openerp_id', '=', record_id),
+                 ('backend_id', '=', self.backend_record.id)
+                 ])
             if erp_id:
                 record_id = erp_id[0]
             else:
