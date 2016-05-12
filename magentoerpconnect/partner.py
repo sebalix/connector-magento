@@ -38,7 +38,7 @@ from .unit.backend_adapter import (GenericAdapter,
 from .unit.import_synchronizer import (DelayedBatchImport,
                                        MagentoImportSynchronizer
                                        )
-from .backend import magento
+from .backend import magento, magento2000
 from .connector import get_environment
 
 _logger = logging.getLogger(__name__)
@@ -201,6 +201,9 @@ class magento_address(orm.Model):
 class PartnerAdapter(GenericAdapter):
     _model_name = 'magento.res.partner'
     _magento_model = 'customer'
+    _magento2_model = 'customers'
+    _magento2_search = 'customers/search'
+    _magento2_key = 'id'
     _admin_path = '/{model}/edit/id/{id}'
 
     def _call(self, method, arguments):
@@ -235,6 +238,8 @@ class PartnerAdapter(GenericAdapter):
         if magento_website_ids is not None:
             filters['website_id'] = {'in': magento_website_ids}
 
+        if self.magento.version == '2.0':
+            return super(PartnerAdapter, self).search(filters=filters)
         # the search method is on ol_customer instead of customer
         return self._call('ol_customer.search',
                           [filters] if filters else [{}])
@@ -323,20 +328,24 @@ class PartnerImportMapper(ImportMapper):
     def names(self, record):
         # TODO create a glue module for base_surname
         parts = [part for part in (record['firstname'],
-                                   record['middlename'],
+                                   record.get('middlename'),
                                    record['lastname']) if part]
         return {'name': ' '.join(parts)}
 
     @mapping
     def customer_group_id(self, record):
         # import customer groups
-        binder = self.get_binder_for_model('magento.res.partner.category')
-        category_id = binder.to_openerp(record['group_id'], unwrap=True)
+        if record['group_id'] == 0:
+            category_id = self.env.ref(
+                'magentoerpconnect.category_no_account').id
+        else:
+            binder = self.get_binder_for_model('magento.res.partner.category')
+            category_id = binder.to_openerp(record['group_id'], unwrap=True)
 
-        if category_id is None:
-            raise MappingError("The partner category with "
-                               "magento id %s does not exist" %
-                               record['group_id'])
+            if category_id is None:
+                raise MappingError("The partner category with "
+                                   "magento id %s does not exist" %
+                                   record['group_id'])
 
         # FIXME: should remove the previous tag (all the other tags from
         # the same backend)
@@ -437,16 +446,20 @@ class PartnerAddressBook(ConnectorUnit):
             importer = get_unit(MagentoImportSynchronizer)
             importer.run(address_id, infos)
 
-    def _get_address_infos(self, magento_partner_id, partner_binding_id):
+    def _read_addresses(self, magento_partner_id):
         get_unit = self.get_connector_unit_for_model
         adapter = get_unit(BackendAdapter)
         mag_address_ids = adapter.search({'customer_id':
                                           {'eq': magento_partner_id}})
         if not mag_address_ids:
             return
-        for address_id in mag_address_ids:
-            magento_record = adapter.read(address_id)
+        return [(address_id, adapter.read(address_id))
+                for address_id in mag_address_ids]
 
+    def _get_address_infos(self, magento_partner_id, partner_binding_id):
+        get_unit = self.get_connector_unit_for_model
+        for address_id, magento_record in self._read_addresses(
+                magento_partner_id):
             # defines if the billing address is merged with the partner
             # or imported as a standalone contact
             merge = False
@@ -480,6 +493,19 @@ class PartnerAddressBook(ConnectorUnit):
                                          partner_binding_id=partner_binding_id,
                                          merge=merge)
             yield address_id, address_infos
+
+
+@magento2000
+class PartnerAddressBook2000(PartnerAddressBook):
+
+    def _read_addresses(self, magento_partner_id):
+        """ Address repository cannot be queried, but the addresses are
+        included in the partner record.
+        TODO: process the addresses when we read the partner the first time """
+        get_unit = self.get_connector_unit_for_model
+        adapter = get_unit(BackendAdapter, model='magento.res.partner')
+        record = adapter.read(magento_partner_id)
+        return [(addr['id'], addr) for addr in record['addresses']]
 
 
 class BaseAddressImportMapper(ImportMapper):
@@ -517,7 +543,13 @@ class BaseAddressImportMapper(ImportMapper):
         if not record.get('street'):
             return
         value = record['street']
-        lines = [line.strip() for line in value.split('\n') if line.strip()]
+        if not value:
+            return {}
+        if isinstance(value, list):
+            lines = value
+        else:
+            lines = [line.strip() for line in value.split('\n')
+                     if line.strip()]
         if len(lines) == 1:
             result = {'street': lines[0], 'street2': False}
         elif len(lines) >= 2:
@@ -528,19 +560,25 @@ class BaseAddressImportMapper(ImportMapper):
 
     @mapping
     def title(self, record):
-        prefix = record['prefix']
-        title_id = False
-        if prefix:
-            title_ids = self.session.search('res.partner.title',
-                                            [('domain', '=', 'contact'),
-                                             ('shortcut', '=ilike', prefix)])
-            if title_ids:
-                title_id = title_ids[0]
-            else:
-                title_id = self.session.create('res.partner.title',
-                                               {'domain': 'contact',
-                                                'shortcut': prefix,
-                                                'name': prefix})
+        prefix = record.get('prefix')
+        if not prefix:
+            return
+        title_ids = self.session.search(
+            'res.partner.title',
+            [('domain', '=', 'contact'),
+             ('shortcut', '=ilike', prefix)],
+            limit=1
+        )
+        if title_ids:
+            title_id = title_ids[0]
+        else:
+            title_id = self.session.create(
+                'res.partner.title',
+                {'domain': 'contact',
+                 'shortcut': prefix,
+                 'name': prefix,
+                 }
+            )
         return {'title': title_id}
 
     @only_create

@@ -47,7 +47,7 @@ from .unit.import_synchronizer import (DelayedBatchImport,
                                        MagentoImportSynchronizer
                                        )
 from .exception import OrderImportRuleRetry
-from .backend import magento
+from .backend import magento, magento1700, magento2000
 from .connector import get_environment
 from .partner import PartnerImportMapper
 
@@ -142,6 +142,8 @@ class sale_order(orm.Model):
                 if old_state == 'cancel':
                     continue  # skip if already canceled
                 for binding in order.magento_bind_ids:
+                    if binding.backend_id.version == '2.0':
+                        continue  # TODO
                     export_state_change.delay(
                         session,
                         'magento.sale.order',
@@ -184,8 +186,10 @@ class sale_order(orm.Model):
                           {'openerp_id': new_id},
                           context=context)
         session = ConnectorSession(cr, uid, context=context)
-        for binding in binding_obj.browse(cr, uid, binding_ids,
-                                          context=context):
+        bindings = binding_obj.browse(cr, uid, binding_ids, context=context)
+        for binding in bindings:
+            if binding.backend_id.version == '2.0':
+                continue  # TODO
             # the sales' status on Magento is likely 'canceled'
             # so we will export the new status (pending, processing, ...)
             export_state_change.delay(
@@ -315,6 +319,10 @@ class sale_order_line(orm.Model):
 class SaleOrderAdapter(GenericAdapter):
     _model_name = 'magento.sale.order'
     _magento_model = 'sales_order'
+    _magento2_model = 'orders'
+    _magento2_search = 'orders'
+    _magento2_key = 'entity_id'
+
     _admin_path = '{model}/view/order_id/{id}'
 
     def _call(self, method, arguments):
@@ -327,6 +335,13 @@ class SaleOrderAdapter(GenericAdapter):
                 raise IDMissingInBackend
             else:
                 raise
+
+    def get_search_arguments(self, filters):
+        return {
+            'imported': False,
+            # 'limit': 200,
+            'filters': filters,
+        }
 
     def search(self, filters=None, from_date=None, to_date=None,
                magento_storeview_ids=None):
@@ -347,11 +362,19 @@ class SaleOrderAdapter(GenericAdapter):
         if magento_storeview_ids is not None:
             filters['store_id'] = {'in': magento_storeview_ids}
 
-        arguments = {'imported': False,
-                     # 'limit': 200,
-                     'filters': filters,
-                     }
+        arguments = self.get_search_arguments(filters)
         return super(SaleOrderAdapter, self).search(arguments)
+
+    def get_parent(self, id):
+        return self._call('%s.get_parent' % self._magento_model, [id])
+
+    def add_comment(self, id, status, comment=None, notify=False):
+        return self._call('%s.addComment' % self._magento_model,
+                          [id, status, comment, notify])
+
+
+@magento1700
+class SaleOrderAdapter1700(SaleOrderAdapter):
 
     def read(self, id, attributes=None):
         """ Returns the information of a record
@@ -362,12 +385,21 @@ class SaleOrderAdapter(GenericAdapter):
                             [id, attributes])
         return record
 
-    def get_parent(self, id):
-        return self._call('%s.get_parent' % self._magento_model, [id])
 
-    def add_comment(self, id, status, comment=None, notify=False):
-        return self._call('%s.addComment' % self._magento_model,
-                          [id, status, comment, notify])
+@magento2000
+class SaleOrderAdapter2000(SaleOrderAdapter):
+
+    def get_search_arguments(self, filters):
+        return filters
+
+    def read(self, id, attributes=None):
+        """ Returns the information of a record
+
+        :rtype: dict
+        """
+        res = super(SaleOrderAdapter, self).read(
+            id, attributes=attributes)
+        return res
 
 
 @magento
@@ -523,6 +555,9 @@ class SaleOrderImport(MagentoImportSynchronizer):
         for item in resource['items']:
             if item.get('parent_item_id'):
                 child_items.setdefault(item['parent_item_id'], []).append(item)
+            elif item.get('parent_item'):  # 2.0
+                child_items.setdefault(
+                    item['parent_item']['item_id'], []).append(item)
             else:
                 top_items.append(item)
 
@@ -566,6 +601,8 @@ class SaleOrderImport(MagentoImportSynchronizer):
             for field in ['sku', 'product_id', 'name']:
                 item[field] = child_items[0][field]
             return item
+        elif product_type == 'bundle':
+            return child_items
         return top_item
 
     def _import_customer_group(self, group_id):
@@ -722,7 +759,7 @@ class SaleOrderImport(MagentoImportSynchronizer):
 
             customer_record = {
                 'firstname': address['firstname'],
-                'middlename': address['middlename'],
+                'middlename': address.get('middlename'),
                 'lastname': address['lastname'],
                 'prefix': address.get('prefix'),
                 'suffix': address.get('suffix'),
@@ -795,8 +832,9 @@ class SaleOrderImport(MagentoImportSynchronizer):
         billing_id = create_address(record['billing_address'])
 
         shipping_id = None
-        if record['shipping_address']:
-            shipping_id = create_address(record['shipping_address'])
+        shipping_address = self._get_shipping_address()
+        if shipping_address:
+            shipping_id = create_address(shipping_address)
 
         self.partner_id = partner.id
         self.partner_invoice_id = billing_id
@@ -838,14 +876,42 @@ class SaleOrderImport(MagentoImportSynchronizer):
             **kwargs)
 
     def _import_dependencies(self):
-        record = self.magento_record
-
         self._import_addresses()
 
-        for line in record.get('items', []):
+
+@magento1700
+class SaleOrderImporter1700(SaleOrderImport):
+    _model_name = ['magento.sale.order']
+
+    def _get_shipping_address(self):
+        return self.magento_record['shipping_address']
+
+    def _import_dependencies(self):
+        super(SaleOrderImporter1700, self)._import_dependencies()
+        for line in self.magento_record.get('items', []):
             _logger.debug('line: %s', line)
             if 'product_id' in line:
                 self._import_dependency(line['product_id'],
+                                        'magento.product.product')
+
+
+@magento2000
+class SaleOrderImporter2000(SaleOrderImport):
+    _model_name = ['magento.sale.order']
+
+    def _get_shipping_address(self):
+        # TODO: Magento2 allows for a different shipping address per line.
+        # Look to https://github.com/OCA/sale-workflow/tree/8.0/sale_allotment?
+        shippings = self.magento_record[
+            'extension_attributes']['shipping_assignments']
+        return shippings and shippings[0]['shipping']['address']
+
+    def _import_dependencies(self):
+        super(SaleOrderImporter2000, self)._import_dependencies()
+        for line in self.magento_record.get('items', []):
+            _logger.debug('line: %s', line)
+            if 'sku' in line:
+                self._import_dependency(line['sku'],
                                         'magento.product.product')
 
 
@@ -1049,14 +1115,37 @@ class SaleOrderLineImportMapper(ImportMapper):
     @mapping
     def product_id(self, record):
         binder = self.get_binder_for_model('magento.product.product')
-        product_id = binder.to_openerp(record['product_id'], unwrap=True)
+        product_ref = self._get_product_ref(record)
+        product_id = binder.to_openerp(product_ref, unwrap=True)
         assert product_id is not None, (
             "product_id %s should have been imported in "
-            "SaleOrderImport._import_dependencies" % record['product_id'])
+            "SaleOrderImport._import_dependencies" % product_ref)
         return {'product_id': product_id}
 
     @mapping
+    def price(self, record):
+        """ tax key may not be present in magento2 when no taxes apply """
+        result = {}
+        base_row_total = float(record['base_row_total'] or 0.)
+        base_row_total_incl_tax = float(
+            record.get('base_row_total_incl_tax') or base_row_total)
+        qty_ordered = float(record['qty_ordered'])
+        if self.options.tax_include:
+            result['price_unit'] = base_row_total_incl_tax / qty_ordered
+        else:
+            result['price_unit'] = base_row_total / qty_ordered
+        return result
+
+
+@magento1700
+class SaleOrderLineImportMapper1700(SaleOrderLineImportMapper):
+
+    def _get_product_ref(self, record):
+        return record['product_id']
+
+    @mapping
     def product_options(self, record):
+        # TODO: product_options for Magento 2.0?
         result = {}
         ifield = record['product_options']
         if ifield:
@@ -1073,18 +1162,12 @@ class SaleOrderLineImportMapper(ImportMapper):
             result = {'notes': notes}
         return result
 
-    @mapping
-    def price(self, record):
-        result = {}
-        base_row_total = float(record['base_row_total'] or 0.)
-        base_row_total_incl_tax = float(record['base_row_total_incl_tax'] or
-                                        0.)
-        qty_ordered = float(record['qty_ordered'])
-        if self.options.tax_include:
-            result['price_unit'] = base_row_total_incl_tax / qty_ordered
-        else:
-            result['price_unit'] = base_row_total / qty_ordered
-        return result
+
+@magento2000
+class SaleOrderLineImportMapper2000(SaleOrderLineImportMapper):
+
+    def _get_product_ref(self, record):
+        return record['sku']
 
 
 @magento
