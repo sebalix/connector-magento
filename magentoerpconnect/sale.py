@@ -433,6 +433,7 @@ class SaleOrderBatchImport(DelayedBatchImport):
 
     def run(self, filters=None):
         """ Run the synchronization """
+        filters = filters.copy()
         if filters is None:
             filters = {}
         filters['state'] = {'neq': 'canceled'}
