@@ -170,17 +170,19 @@ class MagentoInvoiceSynchronizer(ExportSynchronizer):
         # get product and quantities to invoice
         # if no magento id found, do not export it
         order = invoice.magento_order_id
+        done_lines = []
         for line in invoice.invoice_line:
             product = line.product_id
             # find the order line with the same product
             # and get the magento item_id (id of the line)
             # to invoice
             order_line = next((line for line in order.magento_order_line_ids
-                               if line.product_id.id == product.id),
+                               if line.product_id.id == product.id and line.id not in done_lines),
                               None)
             if order_line is None:
                 continue
-
+            done_lines.append(order_line.id)
+            print done_lines
             item_id = order_line.magento_id
             item_qty.setdefault(item_id, 0)
             item_qty[item_id] += line.quantity
