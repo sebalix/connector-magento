@@ -25,6 +25,7 @@ Helpers usable in the tests
 
 import mock
 from contextlib import contextmanager
+from urllib2 import HTTPError
 from ..unit.backend_adapter import call_to_key
 
 
@@ -51,7 +52,7 @@ class TestResponder(object):
         self._calls = []
         self.call_to_key = key_func or call_to_key
 
-    def __call__(self, method, arguments):
+    def __call__(self, method, arguments, http_method=None, storeview=None):
         self._calls.append((method, arguments))
         key = self.call_to_key(method, arguments)
         assert key in self._responses, (
@@ -81,8 +82,15 @@ class MockResponseImage(object):
     def __init__(self, resp_data, code=200, msg='OK'):
         self.resp_data = resp_data
         self.code = code
+        self.content = resp_data
         self.msg = msg
         self.headers = {'content-type': 'image/jpeg'}
+        self.status_code = code
+
+    def raise_for_status(self):
+        if self.status_code and self.status_code != 200:
+            raise HTTPError(
+                '', self.status_code, str(self.status_code), None, None)
 
     def read(self):
         return self.resp_data
@@ -93,8 +101,8 @@ class MockResponseImage(object):
 
 @contextmanager
 def mock_urlopen_image():
-    with mock.patch('urllib2.urlopen') as urlopen:
-        urlopen.return_value = MockResponseImage('')
+    with mock.patch('requests.get') as requests_get:
+        requests_get.return_value = MockResponseImage('')
         yield
 
 
