@@ -399,7 +399,7 @@ class MagentoExporter(MagentoBaseExporter):
             return
 
         # export the missing linked resources
-        self._export_dependencies()
+        dependencies_exported = self._export_dependencies()
 
         # prevent other jobs to export the same record
         # will be released on commit (or rollback)
@@ -417,7 +417,8 @@ class MagentoExporter(MagentoBaseExporter):
             if not record:
                 return _('Nothing to export.')
             self.magento_id = self._create(record)
-        return _('Record exported with ID %s on Magento.') % self.magento_id
+        return _('Record exported with ID %s on Magento.'
+                 'Dependencies exported : %s') % (self.magento_id, dependencies_exported)
 
 
 @job
