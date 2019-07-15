@@ -20,6 +20,7 @@
 ##############################################################################
 
 from openerp.osv import fields, orm
+from openerp.tools.parse_version import parse_version as v
 from openerp.addons.connector.unit.mapper import (mapping,
                                                   only_create,
                                                   ImportMapper
@@ -84,7 +85,7 @@ class PartnerCategoryAdapter(GenericAdapter):
 
         :rtype: list
         """
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             return super(PartnerCategoryAdapter, self).search(filters=filters)
         return [int(row['customer_group_id']) for row
                 in self._call('%s.list' % self._magento_model,

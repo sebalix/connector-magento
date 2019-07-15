@@ -142,7 +142,7 @@ class sale_order(orm.Model):
                 if old_state == 'cancel':
                     continue  # skip if already canceled
                 for binding in order.magento_bind_ids:
-                    if binding.backend_id.version == '2.0':
+                    if v(binding.backend_id.version) >= v('2.0'):
                         continue  # TODO
                     export_state_change.delay(
                         session,
@@ -188,7 +188,7 @@ class sale_order(orm.Model):
         session = ConnectorSession(cr, uid, context=context)
         bindings = binding_obj.browse(cr, uid, binding_ids, context=context)
         for binding in bindings:
-            if binding.backend_id.version == '2.0':
+            if v(binding.backend_id.version) >= v('2.0'):
                 continue  # TODO
             # the sales' status on Magento is likely 'canceled'
             # so we will export the new status (pending, processing, ...)

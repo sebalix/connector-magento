@@ -22,6 +22,7 @@
 import logging
 import xmlrpclib
 from openerp.osv import orm, fields
+from openerp.tools.parse_version import parse_version as v
 from openerp.tools.translate import _
 from openerp.addons.connector.queue.job import job, related_action
 from openerp.addons.connector.event import on_record_create
@@ -320,7 +321,7 @@ def export_picking_done(session, model_name, record_id, with_tracking=True):
     picking_exporter = env.get_connector_unit(MagentoPickingExport)
     res = picking_exporter.run(record_id)
 
-    if picking.backend_id.version == '2.0':
+    if v(picking.backend_id.version) >= v('2.0'):
         return res  # TODO
     if with_tracking and picking.carrier_tracking_ref:
         export_tracking_number.delay(session, model_name, record_id)

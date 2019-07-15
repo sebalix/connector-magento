@@ -24,6 +24,9 @@ import logging
 import xmlrpclib
 
 import magento as magentolib
+
+from openerp.tools.parse_version import parse_version as v
+
 from openerp.addons.connector.unit.backend_adapter import CRUDAdapter
 from openerp.addons.connector.exception import (NetworkRetryableError,
                                                 RetryableJobError)
@@ -156,7 +159,9 @@ class MagentoCRUDAdapter(CRUDAdapter):
     def _call(self, method, arguments=None, http_method=None, storeview=None):
         try:
             custom_url = self.magento.use_custom_api_path
-            protocol = 'rest' if self.magento.version == '2.0' else 'xmlrpc'
+            protocol = 'xmlrpc'
+            if v(self.magento.version) >= v('2.0'):
+                protocol = 'rest'
             _logger.debug("Start calling Magento api %s", method)
             with magentolib.API(self.magento.location,
                                 self.magento.username,
@@ -215,18 +220,22 @@ class GenericAdapter(MagentoCRUDAdapter):
     _magento2_key = None
     _admin_path = None
 
-    @staticmethod
-    def get_searchCriteria(filters):
+    @classmethod
+    def get_searchCriteria(cls, filters):
         """ Craft Magento 2.0 searchCriteria from filters, for example:
 
         'searchCriteria[filter_groups][0][filters][0][field]': 'website_id',
         'searchCriteria[filter_groups][0][filters][0][value]': '1,2',
         'searchCriteria[filter_groups][0][filters][0][condition_type]': 'in',
 
+        Should be written like this:
+
+            >>> filters = {'website_id': {'in': [1,2]}}
+
         Presumably, filter_groups are joined with AND, while filters in the
         same group are joined with OR (not supported here).
         """
-        filters = filters or {}
+        filters = filters or {cls._magento2_key or 'id': {'notnull': ''}}
         res = {}
         count = 0
         expr = 'searchCriteria[filter_groups][%s][filters][0][%s]'
@@ -264,7 +273,7 @@ class GenericAdapter(MagentoCRUDAdapter):
 
         :rtype: list
         """
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             key = self._magento2_key or 'id'
             params = {}
             if self._magento2_search:
@@ -290,7 +299,7 @@ class GenericAdapter(MagentoCRUDAdapter):
 
         :rtype: dict
         """
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
 
             def escape(term):
                 if isinstance(term, basestring):
@@ -323,7 +332,7 @@ class GenericAdapter(MagentoCRUDAdapter):
     def search_read(self, filters=None):
         """ Search records according to some criterias
         and returns their information"""
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             params = {}
             if self._magento2_search:
                 params.update(self.get_searchCriteria(filters))

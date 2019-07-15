@@ -26,8 +26,11 @@ import base64
 import xmlrpclib
 import sys
 from collections import defaultdict
+
 from openerp.osv import orm, fields
 from openerp.tools.translate import _
+from openerp.tools.parse_version import parse_version as v
+
 from openerp.addons.connector.queue.job import job, related_action
 from openerp.addons.connector.event import on_record_write
 from openerp.addons.connector.unit.synchronizer import (ImportSynchronizer,
@@ -51,7 +54,7 @@ from .unit.import_synchronizer import (DelayedBatchImport,
                                        AddCheckpoint,
                                        )
 from .connector import get_environment
-from .backend import magento, magento2000
+from .backend import magento, magento2000, magento2200
 from .related_action import unwrap_binding
 
 _logger = logging.getLogger(__name__)
@@ -268,7 +271,7 @@ class ProductProductAdapter(GenericAdapter):
         if to_date is not None:
             filters.setdefault('updated_at', {})
             filters['updated_at']['to'] = to_date.strftime(dt_fmt)
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             return super(ProductProductAdapter, self).search(filters=filters)
         # TODO add a search entry point on the Magento API
         return [int(row['product_id']) for row
@@ -280,8 +283,8 @@ class ProductProductAdapter(GenericAdapter):
 
         :rtype: dict
         """
-        if self.magento.version == '2.0':
-            # TODO: storeview context in Magento 2.0
+        if v(self.magento.version) >= v('2.0'):
+            # TODO: storeview context in Magento >= 2.0
             res = super(ProductProductAdapter, self).read(
                 id, attributes=attributes)
             if res:
@@ -295,7 +298,7 @@ class ProductProductAdapter(GenericAdapter):
         """ Update records on the external system """
         # XXX actually only ol_catalog_product.update works
         # the PHP connector maybe breaks the catalog_product.update
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             raise NotImplementedError  # TODO
         return self._call('ol_catalog_product.update',
                           [int(id), data, storeview_id, 'id'])
@@ -304,13 +307,13 @@ class ProductProductAdapter(GenericAdapter):
         return self._call('product_media.list', [int(id), storeview_id, 'id'])
 
     def read_image(self, id, image_name, storeview_id=False):
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             raise NotImplementedError  # TODO
         return self._call('product_media.info',
                           [int(id), image_name, storeview_id, 'id'])
 
     def update_inventory(self, id, data):
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             raise NotImplementedError  # TODO
         # product_stock.update is too slow
         return self._call('oerp_cataloginventory_stock_item.update',
@@ -435,6 +438,20 @@ class CatalogImageImporter2000(CatalogImageImporter):
         image_data['url'] = '%s/media/catalog/%s/%s' % (
             self.backend_record.location, model, image_data['file'])
         return super(CatalogImageImporter2000, self)._get_binary_image(
+            image_data)
+
+
+@magento2200
+class CatalogImageImporter2200(CatalogImageImporter):
+
+    def _get_binary_image(self, image_data):
+        if 'magento.product.product' in self._model_name:
+            model = 'product'
+        else:
+            raise NotImplementedError  # Categories?
+        image_data['url'] = '%s/pub/media/catalog/%s/%s' % (
+            self.backend_record.location, model, image_data['file'])
+        return super(CatalogImageImporter2200, self)._get_binary_image(
             image_data)
 
 

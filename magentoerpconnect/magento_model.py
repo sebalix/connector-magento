@@ -22,8 +22,10 @@
 
 import logging
 from datetime import datetime, timedelta
+
 from openerp.osv import fields, orm
 from openerp.tools import DEFAULT_SERVER_DATETIME_FORMAT
+from openerp.tools.parse_version import parse_version as v
 from openerp.tools.translate import _
 from openerp.addons.connector.session import ConnectorSession
 from openerp.addons.connector.connector import ConnectorUnit
@@ -61,7 +63,7 @@ class magento_backend(orm.Model):
         to add a version from an ``_inherit`` does not constrain
         to redefine the ``version`` field in the ``_inherit`` model.
         """
-        return [('1.7', '1.7+'), ('2.0', '2.0')]
+        return [('1.7', '1.7+'), ('2.0', '2.0'), ('2.2', '2.2+')]
 
     def _select_versions(self, cr, uid, context=None):
         """ Available versions in the backend.
@@ -615,7 +617,7 @@ class StoreviewAdapter(GenericAdapter):
 
         :rtype: dict
         """
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             if attributes:
                 raise NotImplementedError  # TODO
             storeview = next(

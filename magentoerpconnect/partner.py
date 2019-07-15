@@ -22,7 +22,9 @@
 import logging
 import xmlrpclib
 from collections import namedtuple
+
 from openerp.osv import fields, orm
+from openerp.tools.parse_version import parse_version as v
 from openerp.addons.connector.queue.job import job
 from openerp.addons.connector.connector import ConnectorUnit
 from openerp.addons.connector.exception import MappingError
@@ -238,7 +240,7 @@ class PartnerAdapter(GenericAdapter):
         if magento_website_ids is not None:
             filters['website_id'] = {'in': magento_website_ids}
 
-        if self.magento.version == '2.0':
+        if v(self.magento.version) >= v('2.0'):
             return super(PartnerAdapter, self).search(filters=filters)
         # the search method is on ol_customer instead of customer
         return self._call('ol_customer.search',
