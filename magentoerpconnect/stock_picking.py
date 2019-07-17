@@ -57,6 +57,13 @@ class magento_stock_picking(orm.Model):
                                             ('partial', 'Partial')],
                                            string='Picking Method',
                                            required=True),
+        'magento_track_id': fields.char(
+            string="Tracking ID",
+            help=u"Used with Magento 2, it stores the Magento ID of the "
+                 u"tracking number.\n"
+                 u"Magento is able to assign several tracking numbers to a "
+                 u"shipment, but we assume we handle only one tracking number "
+                 u"per shipment. "),
     }
 
     _sql_constraints = [
@@ -129,7 +136,7 @@ class StockPickingAdapter(GenericAdapter):
         return self._call('%s.create' % self._magento_model,
                           [order_id, items, comment, email, include_comment])
 
-    def add_tracking_number(self, magento_id, carrier_code,
+    def add_tracking_number(self, binding_id, magento_id, carrier_code,
                             tracking_title, tracking_number):
         """ Add new tracking number.
 
@@ -150,6 +157,32 @@ class StockPickingAdapter(GenericAdapter):
         """
         return self._call('%s.getCarriers' % self._magento_model,
                           [magento_id])
+
+
+@magento2000
+class StockPickingAdapter2000(StockPickingAdapter):
+
+    def add_tracking_number(self, binding_id, magento_id, carrier_code,
+                            tracking_title, tracking_number):
+        picking = self.session.browse(self.model._name, binding_id)
+        arguments = {
+            'entity': {
+                # FIXME: not sure about the difference between order_id
+                # and parent_id, but both have to be set to make Magento happy
+                'order_id': magento_id,
+                'parent_id': magento_id,
+                'track_number': tracking_number,
+                'title': tracking_title,
+                'carrier_code': carrier_code,
+            },
+        }
+        # Update the existing tracking number if any
+        if picking.magento_track_id:
+            arguments['entity']['entity_id'] = picking.magento_track_id
+        res = self._call('shipment/track', arguments, http_method='post')
+        if not picking.magento_track_id:
+            picking.write({'magento_track_id': res['entity_id']})
+        return res
 
 
 @magento
@@ -321,8 +354,6 @@ def export_picking_done(session, model_name, record_id, with_tracking=True):
     picking_exporter = env.get_connector_unit(MagentoPickingExport)
     res = picking_exporter.run(record_id)
 
-    if v(picking.backend_id.version) >= v('2.0'):
-        return res  # TODO
     if with_tracking and picking.carrier_tracking_ref:
         export_tracking_number.delay(session, model_name, record_id)
     return res

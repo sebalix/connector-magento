@@ -28,6 +28,7 @@
                         <field name="backend_id"/>
                         <field name="magento_id"/>
                         <field name="picking_method"/>
+                        <field name="magento_track_id"/>
                     </group>
                 </form>
             </field>

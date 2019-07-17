@@ -26,7 +26,7 @@ from openerp.addons.connector.exception import FailedJobError
 from openerp.addons.connector.unit.synchronizer import ExportSynchronizer
 from openerp.addons.connector_ecommerce.event import on_tracking_number_added
 from .connector import get_environment
-from .backend import magento
+from .backend import magento, magento2000
 from .related_action import unwrap_binding
 
 _logger = logging.getLogger(__name__)
@@ -105,8 +105,20 @@ class MagentoTrackingExport(ExportSynchronizer):
         self._validate(picking)
         self._check_allowed_carrier(picking, sale_binding_id.magento_id)
         tracking_args = self._get_tracking_args(picking)
-        self.backend_adapter.add_tracking_number(magento_id, *tracking_args)
+        self.backend_adapter.add_tracking_number(
+            binding_id, magento_id, *tracking_args)
 
+
+@magento2000
+class MagentoTrackingExport2000(MagentoTrackingExport):
+
+    def _check_allowed_carrier(self, picking, magento_id):
+        """We can not list all shipping methods of Magento 2 from the REST API
+        to know the available carrier codes.
+        Instead we do not bother to check the carrier code, if it is wrong
+        Magento will returns an error when updating the shipment.
+        """
+        return
 
 @on_tracking_number_added
 def delay_export_tracking_number(session, model_name, record_id):
