@@ -142,8 +142,6 @@ class sale_order(orm.Model):
                 if old_state == 'cancel':
                     continue  # skip if already canceled
                 for binding in order.magento_bind_ids:
-                    if v(binding.backend_id.version) >= v('2.0'):
-                        continue  # TODO
                     export_state_change.delay(
                         session,
                         'magento.sale.order',
@@ -188,8 +186,6 @@ class sale_order(orm.Model):
         session = ConnectorSession(cr, uid, context=context)
         bindings = binding_obj.browse(cr, uid, binding_ids, context=context)
         for binding in bindings:
-            if v(binding.backend_id.version) >= v('2.0'):
-                continue  # TODO
             # the sales' status on Magento is likely 'canceled'
             # so we will export the new status (pending, processing, ...)
             export_state_change.delay(
@@ -325,17 +321,6 @@ class SaleOrderAdapter(GenericAdapter):
 
     _admin_path = '{model}/view/order_id/{id}'
 
-    def _call(self, method, arguments):
-        try:
-            return super(SaleOrderAdapter, self)._call(method, arguments)
-        except xmlrpclib.Fault as err:
-            # this is the error in the Magento API
-            # when the sales order does not exist
-            if err.faultCode == 100:
-                raise IDMissingInBackend
-            else:
-                raise
-
     def get_search_arguments(self, filters):
         return {
             'imported': False,
@@ -366,15 +351,25 @@ class SaleOrderAdapter(GenericAdapter):
         return super(SaleOrderAdapter, self).search(arguments)
 
     def get_parent(self, id):
-        return self._call('%s.get_parent' % self._magento_model, [id])
+        raise NotImplementedError
 
     def add_comment(self, id, status, comment=None, notify=False):
-        return self._call('%s.addComment' % self._magento_model,
-                          [id, status, comment, notify])
+        raise NotImplementedError
 
 
 @magento1700
 class SaleOrderAdapter1700(SaleOrderAdapter):
+
+    def _call(self, method, arguments):
+        try:
+            return super(SaleOrderAdapter, self)._call(method, arguments)
+        except xmlrpclib.Fault as err:
+            # this is the error in the Magento API
+            # when the sales order does not exist
+            if err.faultCode == 100:
+                raise IDMissingInBackend
+            else:
+                raise
 
     def read(self, id, attributes=None):
         """ Returns the information of a record
@@ -384,6 +379,13 @@ class SaleOrderAdapter1700(SaleOrderAdapter):
         record = self._call('%s.info' % self._magento_model,
                             [id, attributes])
         return record
+
+    def get_parent(self, id):
+        return self._call('%s.get_parent' % self._magento_model, [id])
+
+    def add_comment(self, id, status, comment=None, notify=False):
+        return self._call('%s.addComment' % self._magento_model,
+                          [id, status, comment, notify])
 
 
 @magento2000
@@ -400,6 +402,24 @@ class SaleOrderAdapter2000(SaleOrderAdapter):
         res = super(SaleOrderAdapter, self).read(
             id, attributes=attributes)
         return res
+
+    def get_parent(self, id):
+        # TODO add support for Magento 2
+        raise NotImplementedError("Magento 2 not yet supported")
+
+    def add_comment(self, id, status, comment=None, notify=False):
+        arguments = {
+            'statusHistory': {
+                'comment': comment,
+                # 'created_at': "2018-06-05  15:22:04",
+                'parent_id': id,
+                'is_customer_notified': int(notify),
+                'is_visible_on_front': 1,
+                'status': status,
+            }
+        }
+        return self._call(
+            'orders/%s/comments' % id, arguments, http_method='post')
 
 
 @magento
@@ -1246,7 +1266,7 @@ class StateExporter(ExportSynchronizer):
 
 @job
 def export_state_change(session, model_name, binding_id, allowed_states=None,
-                        comment=None, notify=None):
+                        comment=None, notify=False):
     """ Change state of a sales order on Magento """
     binding = session.browse(model_name, binding_id)
     backend_id = binding.backend_id.id
