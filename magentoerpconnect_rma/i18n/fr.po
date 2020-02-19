@@ -40,12 +40,8 @@ msgstr "Un Commentaire de RMA avec le même ID sur Magento existe déjà."
 #. module: magentoerpconnect_rma
 #: field:magento.claim.attachment,sync_date:0
 #: field:magento.claim.comment,sync_date:0
-<<<<<<< HEAD
-#: field:magento.claim.line,sync_date:0 field:magento.crm.claim,sync_date:0
-=======
 #: field:magento.claim.line,sync_date:0
 #: field:magento.crm.claim,sync_date:0
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 msgid "Last synchronization date"
 msgstr "Date de la dernière synchronisation"
 
@@ -100,12 +96,8 @@ msgid "Import in background"
 msgstr "Importer en arrière-plan"
 
 #. module: magentoerpconnect_rma
-<<<<<<< HEAD
-#: field:claim.line,magento_bind_ids:0 field:crm.claim,magento_bind_ids:0
-=======
 #: field:claim.line,magento_bind_ids:0
 #: field:crm.claim,magento_bind_ids:0
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 #: field:ir.attachment,magento_claim_bind_ids:0
 #: field:mail.message,magento_claim_bind_ids:0
 msgid "Magento Bindings"
@@ -114,12 +106,8 @@ msgstr "Magento Bindings"
 #. module: magentoerpconnect_rma
 #: field:magento.claim.attachment,magento_id:0
 #: field:magento.claim.comment,magento_id:0
-<<<<<<< HEAD
-#: field:magento.claim.line,magento_id:0 field:magento.crm.claim,magento_id:0
-=======
 #: field:magento.claim.line,magento_id:0
 #: field:magento.crm.claim,magento_id:0
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 msgid "ID on Magento"
 msgstr "ID sur Magento"
 
@@ -154,17 +142,11 @@ msgid "Claim Comment"
 msgstr "Commentaire de RMA"
 
 #. module: magentoerpconnect_rma
-<<<<<<< HEAD
 #: code:addons/magentoerpconnect_rma/claim.py:557
 #: code:addons/magentoerpconnect_rma/claim.py:649
 #, python-format
 msgid "Already up-to-date."
 msgstr ""
-=======
-#: field:ir.attachment,created_at:0
-msgid "Created At (on Magento)"
-msgstr "Créé à (sur Magento)"
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 
 #. module: magentoerpconnect_rma
 #: field:crm.claim,claim_id:0
@@ -175,12 +157,9 @@ msgstr "ID de RMA"
 #: model:ir.model,name:magentoerpconnect_rma.model_magento_backend
 #: field:magento.claim.attachment,backend_id:0
 #: field:magento.claim.comment,backend_id:0
-<<<<<<< HEAD
 #: field:magento.claim.line,backend_id:0 field:magento.crm.claim,backend_id:0
-=======
 #: field:magento.claim.line,backend_id:0
 #: field:magento.crm.claim,backend_id:0
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 msgid "Magento Backend"
 msgstr "Backend Magento"
 
@@ -215,12 +194,8 @@ msgstr "Commentaires de RMA"
 #. module: magentoerpconnect_rma
 #: field:ir.attachment,claim_id:0
 #: model:ir.model,name:magentoerpconnect_rma.model_crm_claim
-<<<<<<< HEAD
-#: field:magento.crm.claim,openerp_id:0 field:mail.message,claim_id:0
-=======
 #: field:magento.crm.claim,openerp_id:0
 #: field:mail.message,claim_id:0
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 msgid "Claim"
 msgstr "Claim"
 
@@ -260,14 +235,11 @@ msgid "Gives the sequence of this line when displaying the claim."
 msgstr "Donne la séquence de cette ligne lors de l'affichage de la RMA."
 
 #. module: magentoerpconnect_rma
-<<<<<<< HEAD
 #: field:ir.attachment,created_at:0
 msgid "Created At (on Magento)"
 msgstr "Créé à (sur Magento)"
 
 #. module: magentoerpconnect_rma
-=======
->>>>>>> [IMP] add french translate for magentoerpconnect_rma
 #: model:ir.model,name:magentoerpconnect_rma.model_magento_claim_attachment
 msgid "Magento Claim Attachment"
 msgstr "Pièce Jointe de RMA Magento"
