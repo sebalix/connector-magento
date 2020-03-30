@@ -535,7 +535,7 @@ class ClaimLineImportMapper1700(ClaimLineImportMapper):
 @magento2000
 class ClaimLineImportMapper2000(ClaimLineImportMapper):
 
-    direct = [('qty_returned', 'product_returned_quantity'), ]
+    direct = [('qty_authorized', 'product_returned_quantity'), ]
 
     @mapping
     def magento_id(self, record):
