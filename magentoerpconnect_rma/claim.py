@@ -158,6 +158,8 @@ class MagentoClaimLine(orm.Model):
                     _get_lines_from_claim, ['backend_id'], 20),
             },
             readonly=True),
+        'reason': fields.char(u"Reason"),
+        'resolution': fields.char(u"Resolution"),
     }
 
     _sql_constraints = [
@@ -233,6 +235,15 @@ class CrmClaimAdapter2000(CrmClaimAdapter):
     _magento2_model = 'returns'
     _magento2_search = 'returns'
     _magento2_key = 'entity_id'
+
+    def write(self, id_, data):
+        """Update claim on the external system."""
+        data = {
+            "rmaDataObject": data,
+        }
+        return self._call(
+            '%s/%s' % (self._magento2_model, id_),
+            data, http_method="put")
 
 
 @magento
@@ -541,6 +552,14 @@ class ClaimLineImportMapper2000(ClaimLineImportMapper):
     def magento_id(self, record):
         return {'magento_id': record['rma_entity_id']}
 
+    @mapping
+    def reason(self, record):
+        return {'reason': record['reason']}
+
+    @mapping
+    def resolution(self, record):
+        return {'resolution': record['resolution']}
+
 
 @job
 def crm_claim_import_batch(session, model_name, backend_id, filters=None):
@@ -556,40 +575,108 @@ def crm_claim_import_batch(session, model_name, backend_id, filters=None):
 
 @on_record_write(model_names='crm.claim')
 def delay_export_all_bindings(session, model_name, record_id, vals):
+    """Export the claim as soon as we update its state/stage."""
     if 'stage_id' in vals:
         magentoerpconnect.delay_export_all_bindings(
             session, model_name, record_id, vals=vals)
 
 
-@magento
+@magento2000
 class MagentoCrmClaimExporter(MagentoExporter):
-    """ Export claim state to Magento. """
     _model_name = ['magento.crm.claim']
 
     def _should_import(self):
         return False
 
 
-@magento
+@magento2000
 class MagentoCrmClaimExportMapper(ExportMapper):
     _model_name = 'magento.crm.claim'
 
     @mapping
-    def stage_id(self, record):
-        state = record.stage_id.name
-        return {'state': state}
+    def items(self, record):
+        """Export the quantity actually returned by the customer."""
+        cr, uid = self.session.cr, self.session.uid
+        imd_model = self.session.pool["ir.model.data"]
+        stage_approved = imd_model.get_object(
+            cr, uid, "crm_claim", "stage_claim2")
+        order_binder = self.get_binder_for_model("magento.sale.order")
+        order_line_binder = self.get_binder_for_model("magento.sale.order.line")
+        magento_order_id = order_binder.to_backend(
+            record.order_id.id, wrap=True)
+        res = {
+            "entity_id": record.magento_id,
+            # 'increment_id', 'order_id' required by Magento
+            "increment_id": record.number,
+            "order_id": magento_order_id,
+            "items": [],
+        }
+        for line in record.magento_claim_line_ids:
+            magento_order_line_id = order_line_binder.to_backend(
+                line.order_line_id.id, wrap=True)
+            item = {
+                "entity_id": line.magento_id,
+                "rma_entity_id": record.magento_id,
+                # 'order_item_id' required by Magento
+                "order_item_id": magento_order_line_id,
+                "qty_returned": line.product_returned_quantity,
+                "reason": line.reason,
+                "resolution": line.resolution,
+            }
+            # Set the approved quantity when the claim is validated/approved
+            if record.stage_id == stage_approved:
+                item["qty_approved"] = item["qty_returned"]
+            res["items"].append(item)
+        res = self._set_status(record, res)
+        if not res:
+            raise orm.except_orm(
+                u"Mapping Error",
+                u"Unable to map the stage '%s' for Magento.\n"
+                u"You can overload the '_set_status' method to extend "
+                u"the mapping.")
+        return res
+
+    def _set_status(self, record, res):
+        """Update `res` to set a valid Magento status."""
+        cr, uid = self.session.cr, self.session.uid
+        stage_model = self.session.pool["crm.claim.stage"]
+        stage_id = record.stage_id.id
+        external_id = stage_model.get_external_id(cr, uid, [stage_id])[stage_id]
+        status_mapping = self._get_magento_status_mapping()
+        if not external_id or external_id not in status_mapping:
+            return False
+        status, status_line = status_mapping[external_id]
+        res["status"] = status
+        for line in res["items"]:
+            line["status"] = status_line
+        return res
+
+    def _get_magento_status_mapping(self):
+        """Return a mapping of OpenERP stage external IDs to Magento statuses
+        (header, line).
+        """
+        return {
+            # New
+            "crm_claim.stage_claim1": ("authorized", "authorized"),
+            # In Progress
+            "crm_claim.stage_claim5": ("received", "received"),
+            # Settled
+            "crm_claim.stage_claim2": ("processed_closed", "approved"),
+            # Rejected
+            "crm_claim.stage_claim3": ("rejected", "rejected"),
+        }
 
 
-@magento
+@magento2000
 class MagentoClaimBinder(MagentoModelBinder):
 
     _model_name = [
         'magento.crm.claim',
         'magento.claim.line',
-        ]
+    ]
 
 
-@magento
+@magento2000
 class CrmClaimAddCheckpoint(AddCheckpoint):
 
     _model_name = [
@@ -597,4 +684,4 @@ class CrmClaimAddCheckpoint(AddCheckpoint):
         'magento.claim.line',
         'magento.claim.comment',
         'magento.claim.attachment'
-        ]
+    ]

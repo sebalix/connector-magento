@@ -7,7 +7,7 @@
     <field name="inherit_id" ref="magentoerpconnect.view_magento_backend_form"/>
     <field name="arch" type="xml">
         <xpath expr="//notebook/page[@name='import']/group[5]" position="after">
-            <group>
+            <group name="import_claim">
                 <div>
                     <label string="Import claims since"
                            class="oe_inline"/>
@@ -19,7 +19,7 @@
                         class="oe_highlight"
                         string="Import in background"/>
             </group>
-            <group>
+            <group name="import_claim_comments">
                 <div>
                     <label string="Import claim comments since"
                            class="oe_inline"/>
@@ -31,7 +31,7 @@
                         class="oe_highlight"
                         string="Import in background"/>
             </group>
-            <group>
+            <group name="import_claim_attachments">
                 <div>
                     <label string="Import claim attachments since"
                            class="oe_inline"/>
